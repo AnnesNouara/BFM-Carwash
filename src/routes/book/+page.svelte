@@ -1,14 +1,17 @@
 <script lang="ts">
-    import Navbar from "$lib/components/Navbar.svelte";
-
-    const businessName = "BFM Carwash";
-
     type Service = {
         id: string;
         name: string;
         description: string;
-        duration: number;
         price: number;
+        duration: number;
+        icon: string;
+    };
+
+    type VehicleType = {
+        id: string;
+        name: string;
+        description: string;
         icon: string;
     };
 
@@ -20,41 +23,41 @@
         icon: string;
     };
 
-    type VehicleType = {
-        id: string;
-        name: string;
-        icon: string;
+    type BookedSlot = {
+        time: string;
+        duration: number;
     };
 
     type CalendarDay = {
         date: string;
         day: number;
+        isCurrentMonth: boolean;
     };
 
     const services: Service[] = [
         {
             id: "car-wash",
             name: "Car Wash",
-            description: "A thorough exterior clean for your vehicle.",
-            duration: 15,
+            description: "A quick exterior clean to leave your car looking fresh.",
             price: 15,
+            duration: 15,
             icon: "🚗"
         },
         {
             id: "mini-valet",
             name: "Mini Valet",
-            description: "A deeper clean for a spotless finish.",
-            duration: 45,
+            description: "A quick interior and exterior clean for your vehicle.",
             price: 45,
+            duration: 45,
             icon: "✨"
         },
         {
             id: "full-valet",
             name: "Full Valet",
-            description: "A complete interior and exterior valet.",
-            duration: 120,
+            description: "A complete interior and exterior valet for your vehicle.",
             price: 65,
-            icon: "⭐"
+            duration: 120,
+            icon: "💎"
         }
     ];
 
@@ -62,133 +65,154 @@
         {
             id: "car",
             name: "Car",
+            description: "Standard car",
             icon: "🚗"
         },
         {
             id: "jeep-suv",
             name: "Jeep / SUV",
+            description: "Larger car or SUV",
             icon: "🚙"
         },
         {
             id: "small-van",
             name: "Small Van",
+            description: "Small commercial van",
             icon: "🚐"
         },
         {
             id: "large-van",
             name: "Large Van",
-            icon: "🚐"
+            description: "Large commercial van",
+            icon: "🚌"
         }
     ];
 
     const extras: Extra[] = [
-    {
-        id: "ceramic-coating",
-        name: "Ceramic Coating",
-        description: "Add an extra layer of protection and shine to your vehicle.",
-        price: 60,
-        icon: "💎"
-    },
-    {
-        id: "polishing",
-        name: "Polishing",
-        description: "Give your vehicle an enhanced shine and smoother finish.",
-        price: 25,
-        icon: "✨"
-    },
-    {
-        id: "none",
-        name: "No Thanks",
-        description: "Continue without adding any extras to your booking.",
-        price: 0,
-        icon: "✓"
-    }
-];
+        {
+            id: "ceramic-coating",
+            name: "Ceramic Coating",
+            description:
+                "Add an extra layer of protection and shine to your vehicle.",
+            price: 60,
+            icon: "💎"
+        },
+        {
+            id: "polishing",
+            name: "Polishing",
+            description:
+                "Give your vehicle an enhanced shine and smoother finish.",
+            price: 25,
+            icon: "✨"
+        },
+        {
+            id: "none",
+            name: "No Thanks",
+            description:
+                "Continue without adding any extras to your booking.",
+            price: 0,
+            icon: "✓"
+        }
+    ];
 
     let selectedService = $state<Service | null>(null);
     let selectedVehicle = $state<VehicleType | null>(null);
     let selectedExtras = $state<string[]>(["none"]);
+
     let selectedDate = $state("");
     let selectedTime = $state("");
+
+    let customerName = $state("");
+    let customerPhone = $state("");
+    let customerEmail = $state("");
+
+    let isSubmitting = $state(false);
+    let bookingMessage = $state("");
+    let bookingSuccess = $state(false);
 
     let calendarMonth = $state(new Date().getMonth());
     let calendarYear = $state(new Date().getFullYear());
 
+    let bookedSlots = $state<BookedSlot[]>([]);
+    let monthlyBookings = $state<Record<string, BookedSlot[]>>({});
+    let loadingAvailability = $state(false);
+
     const openingHour = 9;
     const closingHour = 18;
+
+    /*
+    |--------------------------------------------------------------------------
+    | Helpers
+    |--------------------------------------------------------------------------
+    */
+
+    function formatPrice(price: number) {
+        return `€${price}`;
+    }
+
+    function formatTime(time: string) {
+        const [hours, minutes] = time
+            .split(":")
+            .map(Number);
+
+        const period = hours >= 12 ? "PM" : "AM";
+        const displayHour =
+            hours % 12 === 0 ? 12 : hours % 12;
+
+        return `${displayHour}:${String(minutes).padStart(2, "0")} ${period}`;
+    }
+
+    function timeToMinutes(time: string) {
+        const [hours, minutes] = time
+            .split(":")
+            .map(Number);
+
+        return hours * 60 + minutes;
+    }
+
+    function getSelectedExtra() {
+        const extraId = selectedExtras[0] ?? "none";
+
+        return (
+            extras.find(
+                (extra) => extra.id === extraId
+            ) ?? extras[2]
+        );
+    }
+
+    function getTotalPrice() {
+        if (!selectedService) {
+            return 0;
+        }
+
+        return (
+            selectedService.price +
+            getSelectedExtra().price
+        );
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Date helpers
+    |--------------------------------------------------------------------------
+    */
+
+    function toDateString(
+        year: number,
+        month: number,
+        day: number
+    ) {
+        return `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+    }
 
     function getTodayString() {
         const today = new Date();
 
-        const year = today.getFullYear();
-        const month = String(today.getMonth() + 1).padStart(2, "0");
-        const day = String(today.getDate()).padStart(2, "0");
-
-        return `${year}-${month}-${day}`;
-    }
-
-    function formatDate(date: string) {
-        if (!date) return "";
-
-        const [year, month, day] = date.split("-").map(Number);
-
-        const formatted = new Date(year, month - 1, day);
-
-        return formatted.toLocaleDateString("en-IE", {
-            weekday: "long",
-            day: "numeric",
-            month: "long",
-            year: "numeric"
-        });
-    }
-
-    function getMonthName() {
-        return new Date(
-            calendarYear,
-            calendarMonth,
-            1
-        ).toLocaleDateString("en-IE", {
-            month: "long",
-            year: "numeric"
-        });
-    }
-
-    function getCalendarDays(): CalendarDay[] {
-        const daysInMonth = new Date(
-            calendarYear,
-            calendarMonth + 1,
-            0
-        ).getDate();
-
-        const firstDay = new Date(
-            calendarYear,
-            calendarMonth,
-            1
-        ).getDay();
-
-        const mondayFirstOffset =
-            firstDay === 0 ? 6 : firstDay - 1;
-
-        const days: CalendarDay[] = [];
-
-        for (let i = 0; i < mondayFirstOffset; i++) {
-            days.push({
-                date: "",
-                day: 0
-            });
-        }
-
-        for (let day = 1; day <= daysInMonth; day++) {
-            const date =
-                `${calendarYear}-${String(calendarMonth + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-
-            days.push({
-                date,
-                day
-            });
-        }
-
-        return days;
+        return toDateString(
+            today.getFullYear(),
+            today.getMonth(),
+            today.getDate()
+        );
     }
 
     function isToday(date: string) {
@@ -199,918 +223,1346 @@
         return date < getTodayString();
     }
 
-    function selectDate(date: string) {
-        if (!date || isPastDate(date)) return;
-
-        selectedDate = date;
-        selectedTime = "";
-    }
-
-    function previousMonth() {
-        const today = new Date();
-
-        const currentMonthStart = new Date(
-            today.getFullYear(),
-            today.getMonth(),
-            1
-        );
-
-        const displayedMonth = new Date(
+    function getCalendarDays(): CalendarDay[] {
+        const firstDay = new Date(
             calendarYear,
             calendarMonth,
             1
         );
 
-        if (displayedMonth <= currentMonthStart) {
-            return;
+        const lastDay = new Date(
+            calendarYear,
+            calendarMonth + 1,
+            0
+        );
+
+        const firstDayOfWeek =
+            firstDay.getDay();
+
+        const daysInMonth =
+            lastDay.getDate();
+
+        const days: CalendarDay[] = [];
+
+        /*
+         * Previous month's trailing days
+         */
+        for (
+            let i = firstDayOfWeek - 1;
+            i >= 0;
+            i--
+        ) {
+            const date = new Date(
+                calendarYear,
+                calendarMonth,
+                -i
+            );
+
+            days.push({
+                date: toDateString(
+                    date.getFullYear(),
+                    date.getMonth(),
+                    date.getDate()
+                ),
+                day: date.getDate(),
+                isCurrentMonth: false
+            });
         }
 
+        /*
+         * Current month's days
+         */
+        for (
+            let day = 1;
+            day <= daysInMonth;
+            day++
+        ) {
+            days.push({
+                date: toDateString(
+                    calendarYear,
+                    calendarMonth,
+                    day
+                ),
+                day,
+                isCurrentMonth: true
+            });
+        }
+
+        /*
+         * Next month's leading days
+         */
+        const remaining =
+            42 - days.length;
+
+        for (
+            let day = 1;
+            day <= remaining;
+            day++
+        ) {
+            const date = new Date(
+                calendarYear,
+                calendarMonth + 1,
+                day
+            );
+
+            days.push({
+                date: toDateString(
+                    date.getFullYear(),
+                    date.getMonth(),
+                    date.getDate()
+                ),
+                day: date.getDate(),
+                isCurrentMonth: false
+            });
+        }
+
+        return days;
+    }
+
+    function getMonthName() {
+        return new Date(
+            calendarYear,
+            calendarMonth,
+            1
+        ).toLocaleString("default", {
+            month: "long"
+        });
+    }
+
+    function previousMonth() {
         if (calendarMonth === 0) {
             calendarMonth = 11;
-            calendarYear -= 1;
+            calendarYear--;
         } else {
-            calendarMonth -= 1;
+            calendarMonth--;
         }
     }
 
     function nextMonth() {
         if (calendarMonth === 11) {
             calendarMonth = 0;
-            calendarYear += 1;
+            calendarYear++;
         } else {
-            calendarMonth += 1;
+            calendarMonth++;
         }
     }
 
-    function toggleExtra(extraId: string) {
-        selectedExtras = [extraId];
-    }
+    /*
+    |--------------------------------------------------------------------------
+    | Time slots
+    |--------------------------------------------------------------------------
+    */
 
-    function getSelectedExtras() {
-        return extras.filter((extra) =>
-            selectedExtras.includes(extra.id)
-        );
-    }
-
-    function getExtrasTotal() {
-        return getSelectedExtras().reduce(
-            (total, extra) => total + extra.price,
-            0
-        );
-    }
-
-    function getTotal() {
-        return (selectedService?.price ?? 0) + getExtrasTotal();
-    }
-
-    function generateTimeSlots(duration: number) {
+    function generateTimeSlots(
+        duration: number
+    ) {
         const slots: string[] = [];
 
-        const openingMinutes = openingHour * 60;
-        const closingMinutes = closingHour * 60;
+        const openingMinutes =
+            openingHour * 60;
+
+        const closingMinutes =
+            closingHour * 60;
 
         for (
             let minutes = openingMinutes;
             minutes + duration <= closingMinutes;
             minutes += 15
         ) {
-            const hours = Math.floor(minutes / 60);
-            const mins = minutes % 60;
+            const hours =
+                Math.floor(minutes / 60);
 
-            const time =
-                `${hours.toString().padStart(2, "0")}:${mins
-                    .toString()
-                    .padStart(2, "0")}`;
+            const mins =
+                minutes % 60;
 
-            slots.push(time);
+            slots.push(
+                `${String(hours).padStart(2, "0")}:${String(mins).padStart(2, "0")}`
+            );
         }
 
         return slots;
     }
 
-    function formatTime(time: string) {
-        const [hours, minutes] = time.split(":").map(Number);
+    /*
+    |--------------------------------------------------------------------------
+    | Availability
+    |--------------------------------------------------------------------------
+    */
 
-        const suffix = hours >= 12 ? "PM" : "AM";
-        const displayHour = hours % 12 || 12;
+    async function loadAvailability(date: string) {
+        if (!date) {
+            bookedSlots = [];
+            return;
+        }
 
-        return `${displayHour}:${minutes
-            .toString()
-            .padStart(2, "0")} ${suffix}`;
+        loadingAvailability = true;
+
+        try {
+            const response = await fetch(
+                `/api/bookings?date=${encodeURIComponent(date)}`
+            );
+
+            const result =
+                await response.json();
+
+            if (!response.ok) {
+                bookedSlots = [];
+                return;
+            }
+
+            bookedSlots =
+                result.bookings ?? [];
+        } catch (error) {
+            console.error(
+                "Availability error:",
+                error
+            );
+
+            bookedSlots = [];
+        } finally {
+            loadingAvailability = false;
+        }
     }
+
+    async function loadMonthlyAvailability() {
+        loadingAvailability = true;
+
+        try {
+            const response = await fetch(
+                `/api/bookings?year=${calendarYear}&month=${calendarMonth + 1}`
+            );
+
+            const result =
+                await response.json();
+
+            if (!response.ok) {
+                monthlyBookings = {};
+                return;
+            }
+
+            const grouped:
+                Record<string, BookedSlot[]> = {};
+
+            for (
+                const booking of
+                result.bookings ?? []
+            ) {
+                if (
+                    !grouped[booking.date]
+                ) {
+                    grouped[booking.date] = [];
+                }
+
+                grouped[booking.date].push({
+                    time: booking.time,
+                    duration:
+                        booking.duration
+                });
+            }
+
+            monthlyBookings = grouped;
+        } catch (error) {
+            console.error(
+                "Monthly availability error:",
+                error
+            );
+
+            monthlyBookings = {};
+        } finally {
+            loadingAvailability = false;
+        }
+    }
+
+    function isTimeSlotAvailable(
+        time: string,
+        duration: number
+    ) {
+        const slotStart =
+            timeToMinutes(time);
+
+        const slotEnd =
+            slotStart + duration;
+
+        return !bookedSlots.some(
+            (booking) => {
+                const bookingStart =
+                    timeToMinutes(
+                        booking.time
+                    );
+
+                const bookingEnd =
+                    bookingStart +
+                    booking.duration;
+
+                return (
+                    slotStart < bookingEnd &&
+                    slotEnd > bookingStart
+                );
+            }
+        );
+    }
+
+    function getAvailableTimeSlots() {
+        if (!selectedService) {
+            return [];
+        }
+
+        return generateTimeSlots(
+            selectedService.duration
+        ).filter((time) =>
+            isTimeSlotAvailable(
+                time,
+                selectedService.duration
+            )
+        );
+    }
+
+    function isDateFullyBooked(
+        date: string
+    ) {
+        if (!selectedService) {
+            return false;
+        }
+
+        const bookingsForDate =
+            monthlyBookings[date] ?? [];
+
+        const timeSlots =
+            generateTimeSlots(
+                selectedService.duration
+            );
+
+        return timeSlots.every(
+            (time) => {
+                const slotStart =
+                    timeToMinutes(time);
+
+                const slotEnd =
+                    slotStart +
+                    selectedService.duration;
+
+                return bookingsForDate.some(
+                    (booking) => {
+                        const bookingStart =
+                            timeToMinutes(
+                                booking.time
+                            );
+
+                        const bookingEnd =
+                            bookingStart +
+                            booking.duration;
+
+                        return (
+                            slotStart <
+                                bookingEnd &&
+                            slotEnd >
+                                bookingStart
+                        );
+                    }
+                );
+            }
+        );
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Selection
+    |--------------------------------------------------------------------------
+    */
+
+    function selectService(
+        service: Service
+    ) {
+        selectedService = service;
+        selectedTime = "";
+
+        /*
+         * Reload monthly availability because
+         * a different service has a different duration.
+         */
+        loadMonthlyAvailability();
+
+        if (selectedDate) {
+            loadAvailability(
+                selectedDate
+            );
+        }
+    }
+
+    function selectVehicle(
+        vehicle: VehicleType
+    ) {
+        selectedVehicle = vehicle;
+    }
+
+    function toggleExtra(
+        extraId: string
+    ) {
+        selectedExtras = [extraId];
+    }
+
+    async function selectDate(
+        date: string
+    ) {
+        if (
+            !date ||
+            isPastDate(date)
+        ) {
+            return;
+        }
+
+        if (
+            selectedService &&
+            isDateFullyBooked(date)
+        ) {
+            return;
+        }
+
+        selectedDate = date;
+        selectedTime = "";
+
+        await loadAvailability(date);
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Booking
+    |--------------------------------------------------------------------------
+    */
+
+    async function submitBooking() {
+        bookingMessage = "";
+        bookingSuccess = false;
+
+        if (!selectedService) {
+            bookingMessage =
+                "Please select a service.";
+
+            return;
+        }
+
+        if (!selectedVehicle) {
+            bookingMessage =
+                "Please select a vehicle type.";
+
+            return;
+        }
+
+        if (!selectedDate) {
+            bookingMessage =
+                "Please select a date.";
+
+            return;
+        }
+
+        if (!selectedTime) {
+            bookingMessage =
+                "Please select a time.";
+
+            return;
+        }
+
+        if (!customerName.trim()) {
+            bookingMessage =
+                "Please enter your name.";
+
+            return;
+        }
+
+        if (!customerPhone.trim()) {
+            bookingMessage =
+                "Please enter your phone number.";
+
+            return;
+        }
+
+        if (!customerEmail.trim()) {
+            bookingMessage =
+                "Please enter your email address.";
+
+            return;
+        }
+
+        isSubmitting = true;
+
+        try {
+            /*
+             * Final client-side availability check
+             */
+            if (
+                !isTimeSlotAvailable(
+                    selectedTime,
+                    selectedService.duration
+                )
+            ) {
+                selectedTime = "";
+
+                bookingMessage =
+                    "That time is no longer available. Please choose another time.";
+
+                return;
+            }
+
+            const response = await fetch(
+                "/api/bookings",
+                {
+                    method: "POST",
+                    headers: {
+                        "Content-Type":
+                            "application/json"
+                    },
+                    body: JSON.stringify({
+                        customerName:
+                            customerName.trim(),
+
+                        email:
+                            customerEmail.trim(),
+
+                        phone:
+                            customerPhone.trim(),
+
+                        serviceId:
+                            selectedService.id,
+
+                        vehicleTypeId:
+                            selectedVehicle.id,
+
+                        extraId:
+                            selectedExtras[0] ??
+                            "none",
+
+                        date:
+                            selectedDate,
+
+                        time:
+                            selectedTime
+                    })
+                }
+            );
+
+            const result =
+                await response.json();
+
+            if (!response.ok) {
+                bookingMessage =
+                    result.message ??
+                    "Something went wrong while creating your booking.";
+
+                return;
+            }
+
+            bookingSuccess = true;
+
+            bookingMessage =
+                `Booking confirmed! Your booking number is #${result.bookingId}.`;
+
+            /*
+             * Refresh availability after
+             * successfully creating the booking.
+             */
+            await loadAvailability(
+                selectedDate
+            );
+
+            await loadMonthlyAvailability();
+
+            /*
+             * If another booking somehow took
+             * the selected slot, clear it.
+             */
+            if (
+                selectedService &&
+                !isTimeSlotAvailable(
+                    selectedTime,
+                    selectedService.duration
+                )
+            ) {
+                selectedTime = "";
+            }
+        } catch (error) {
+            console.error(
+                "Booking submission error:",
+                error
+            );
+
+            bookingMessage =
+                "Something went wrong. Please try again.";
+        } finally {
+            isSubmitting = false;
+        }
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Load monthly availability when the
+    | calendar month or service changes
+    |--------------------------------------------------------------------------
+    */
+
+    $effect(() => {
+        calendarYear;
+        calendarMonth;
+        selectedService;
+
+        loadMonthlyAvailability();
+    });
 </script>
 
 <svelte:head>
-    <title>Book Your Service | {businessName}</title>
-
+    <title>Book an Appointment | BFM Carwash</title>
     <meta
         name="description"
-        content="Book a car wash or valet service with BFM Carwash in Dundalk."
+        content="Book your car wash or valet appointment with BFM Carwash in Dundalk."
     />
 </svelte:head>
 
-<main class="min-h-screen bg-black text-white">
+<div class="min-h-screen bg-black text-white">
+    <div
+        class="mx-auto max-w-6xl px-4 py-10 sm:px-6 lg:px-8"
+    >
+        <!-- Header -->
 
-    <Navbar businessName={businessName} />
-
-    <!-- HEADER -->
-
-    <section class="px-6 pb-14 pt-36 text-center lg:px-8">
-
-        <div class="mx-auto max-w-3xl">
-
-            <p
-                class="mb-5 text-sm font-semibold uppercase tracking-[0.3em] text-blue-400"
+        <div class="mb-10">
+            <a
+                href="/"
+                class="mb-4 inline-flex items-center gap-2 text-sm font-medium text-gray-400 transition hover:text-white"
             >
-                Book Your Service
-            </p>
+                ← Back to home
+            </a>
 
             <h1
-                class="text-4xl font-black uppercase tracking-tight sm:text-5xl"
+                class="text-3xl font-black tracking-tight sm:text-4xl"
             >
-                Book With BFM
+                Book an Appointment
             </h1>
 
-            <p
-                class="mx-auto mt-5 max-w-2xl text-lg leading-8 text-gray-400"
-            >
-                Choose your service, select a date and time, and we'll
-                take care of the rest.
+            <p class="mt-2 text-gray-400">
+                Choose your service, date and time.
             </p>
-
         </div>
 
-    </section>
+        <!-- Main content -->
 
-    <!-- BOOKING -->
+        <div class="space-y-10">
+            <!-- Service -->
 
-    <section class="px-6 pb-24 lg:px-8">
-
-        <div class="mx-auto max-w-5xl">
-
-            <!-- STEP 1 -->
-
-            <div
-                class="rounded-2xl border border-white/10 bg-zinc-950 p-6 sm:p-8"
-            >
-
-                <div class="mb-8">
-
-                    <p
-                        class="text-sm font-semibold uppercase tracking-[0.25em] text-blue-400"
-                    >
-                        Step 1
-                    </p>
-
-                    <h2 class="mt-2 text-2xl font-black uppercase">
-                        Choose Your Service
+            <section>
+                <div class="mb-5">
+                    <h2 class="text-xl font-black">
+                        1. Choose a Service
                     </h2>
 
+                    <p class="mt-1 text-sm text-gray-500">
+                        Select the service you'd like.
+                    </p>
                 </div>
 
-                <div class="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-
+                <div
+                    class="grid gap-4 md:grid-cols-3"
+                >
                     {#each services as service}
-
                         <button
                             type="button"
-                            onclick={() => {
-                                selectedService = service;
-                                selectedTime = "";
-                            }}
-                            class={`group rounded-2xl border-2 p-6 text-left transition-all duration-200 sm:p-7 ${
-                                selectedService?.id === service.id
+                            onclick={() =>
+                                selectService(
+                                    service
+                                )
+                            }
+                            class={`rounded-2xl border-2 p-5 text-left transition ${
+                                selectedService?.id ===
+                                service.id
                                     ? "border-blue-500 bg-blue-500/10 shadow-lg shadow-blue-500/10"
-                                    : "border-white/15 bg-black hover:border-blue-500/60 hover:bg-zinc-900"
+                                    : "border-white/10 bg-zinc-950 hover:border-blue-500/50 hover:bg-zinc-900"
                             }`}
                         >
-
-                            <div class="flex items-start justify-between">
-
+                            <div
+                                class="mb-4 flex items-start justify-between"
+                            >
                                 <div
-                                    class={`flex h-14 w-14 items-center justify-center rounded-xl text-2xl ${
-                                        selectedService?.id === service.id
-                                            ? "bg-blue-600/20"
-                                            : "bg-zinc-900"
-                                    }`}
+                                    class="flex h-12 w-12 items-center justify-center rounded-xl bg-zinc-900 text-2xl"
                                 >
                                     {service.icon}
                                 </div>
 
                                 {#if selectedService?.id === service.id}
-
                                     <div
-                                        class="flex h-8 w-8 items-center justify-center rounded-full bg-blue-600 text-sm font-bold"
+                                        class="flex h-6 w-6 items-center justify-center rounded-full bg-blue-600 text-xs font-black"
                                     >
                                         ✓
                                     </div>
-
                                 {/if}
-
                             </div>
 
-                            <h3
-                                class="mt-6 text-2xl font-black uppercase tracking-tight"
-                            >
+                            <h3 class="text-lg font-black">
                                 {service.name}
                             </h3>
 
                             <p
-                                class="mt-3 min-h-[48px] text-sm leading-6 text-gray-400"
+                                class="mt-2 min-h-[48px] text-sm leading-6 text-gray-500"
                             >
                                 {service.description}
                             </p>
 
-                            {#if service.id === "full-valet"}
-
-                                <div
-                                    class="mt-4 rounded-xl border border-blue-500/20 bg-blue-500/5 p-3"
-                                >
-                                    <p class="text-xs leading-5 text-gray-400">
-                                        <span class="font-semibold text-gray-200">
-                                            Please note:
-                                        </span>
-                                        Full valet appointments typically take
-                                        <span class="font-semibold text-white">
-                                            1–2 hours
-                                        </span>
-                                        depending on the condition of the vehicle.
-                                    </p>
-                                </div>
-
-                            {/if}
-
                             <div
-                                class="mt-7 flex items-center justify-between border-t border-white/10 pt-5"
+                                class="mt-5 flex items-center justify-between border-t border-white/10 pt-4"
                             >
+                                <span
+                                    class="text-lg font-black text-white"
+                                >
+                                    {formatPrice(
+                                        service.price
+                                    )}
+                                </span>
 
-                                <div>
-
-                                    <p
-                                        class="text-xs uppercase tracking-wider text-gray-500"
-                                    >
-                                        Price
-                                    </p>
-
-                                    <p
-                                        class="mt-1 text-lg font-black text-blue-400"
-                                    >
-                                        €{service.price}
-                                    </p>
-
-                                </div>
-
-                                <div class="text-right">
-
-                                    <p
-                                        class="text-xs uppercase tracking-wider text-gray-500"
-                                    >
-                                        Duration
-                                    </p>
-
-                                    <p
-                                        class="mt-1 text-lg font-bold text-white"
-                                    >
-                                        {service.duration === 120
-                                            ? "1–2 hrs"
-                                            : `${service.duration} min`}
-                                    </p>
-
-                                </div>
-
+                                <span
+                                    class="text-sm font-bold text-gray-500"
+                                >
+                                    {service.duration ===
+                                    120
+                                        ? "1–2 hrs"
+                                        : `${service.duration} min`}
+                                </span>
                             </div>
-
                         </button>
-
                     {/each}
-
                 </div>
 
-            </div>
+                {#if selectedService?.id === "full-valet"}
+                    <div
+                        class="mt-4 rounded-xl border border-yellow-500/20 bg-yellow-500/5 px-4 py-3 text-sm text-yellow-400"
+                    >
+                        Please note: Full valet appointments
+                        typically take 1–2 hours, depending
+                        on the condition of the vehicle.
+                    </div>
+                {/if}
+            </section>
 
-            {#if selectedService}
+            <!-- Vehicle -->
 
-                <!-- STEP 2 — VEHICLE TYPE -->
+            <section>
+                <div class="mb-5">
+                    <h2 class="text-xl font-black">
+                        2. Choose Your Vehicle
+                    </h2>
+
+                    <p class="mt-1 text-sm text-gray-500">
+                        Select the type of vehicle you're bringing.
+                    </p>
+                </div>
 
                 <div
-                    class="mt-6 rounded-2xl border border-white/10 bg-zinc-950 p-6 sm:p-8"
+                    class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4"
                 >
-
-                    <div class="mb-8">
-
-                        <p
-                            class="text-sm font-semibold uppercase tracking-[0.25em] text-blue-400"
+                    {#each vehicleTypes as vehicle}
+                        <button
+                            type="button"
+                            onclick={() =>
+                                selectVehicle(
+                                    vehicle
+                                )
+                            }
+                            class={`rounded-2xl border-2 p-5 text-left transition ${
+                                selectedVehicle?.id ===
+                                vehicle.id
+                                    ? "border-blue-500 bg-blue-500/10"
+                                    : "border-white/10 bg-zinc-950 hover:border-blue-500/50 hover:bg-zinc-900"
+                            }`}
                         >
-                            Step 2
-                        </p>
-
-                        <h2 class="mt-2 text-2xl font-black uppercase">
-                            Choose Your Vehicle
-                        </h2>
-
-                        <p class="mt-2 text-sm text-gray-500">
-                            Select the type of vehicle you're bringing to BFM.
-                        </p>
-
-                    </div>
-
-                    <div class="grid grid-cols-2 gap-4 sm:grid-cols-4">
-
-                        {#each vehicleTypes as vehicle}
-
-                            <button
-                                type="button"
-                                onclick={() => {
-                                    selectedVehicle = vehicle;
-                                    selectedTime = "";
-                                }}
-                                class={`rounded-2xl border-2 p-5 text-center transition-all duration-200 ${
-                                    selectedVehicle?.id === vehicle.id
-                                        ? "border-blue-500 bg-blue-500/10 shadow-lg shadow-blue-500/10"
-                                        : "border-white/10 bg-black hover:border-blue-500/50 hover:bg-zinc-900"
-                                }`}
+                            <div
+                                class="flex items-center justify-between"
                             >
-
-                                <div
-                                    class={`mx-auto flex h-12 w-12 items-center justify-center rounded-xl text-xl ${
-                                        selectedVehicle?.id === vehicle.id
-                                            ? "bg-blue-600/20"
-                                            : "bg-zinc-900"
-                                    }`}
-                                >
+                                <span class="text-3xl">
                                     {vehicle.icon}
-                                </div>
-
-                                <h3
-                                    class="mt-4 text-sm font-black uppercase"
-                                >
-                                    {vehicle.name}
-                                </h3>
+                                </span>
 
                                 {#if selectedVehicle?.id === vehicle.id}
+                                    <span
+                                        class="text-sm font-black text-blue-400"
+                                    >
+                                        ✓
+                                    </span>
+                                {/if}
+                            </div>
 
+                            <h3
+                                class="mt-4 font-black"
+                            >
+                                {vehicle.name}
+                            </h3>
+
+                            <p
+                                class="mt-1 text-sm text-gray-500"
+                            >
+                                {vehicle.description}
+                            </p>
+                        </button>
+                    {/each}
+                </div>
+            </section>
+
+            <!-- Extras -->
+
+            <section>
+                <div class="mb-5">
+                    <h2 class="text-xl font-black">
+                        3. Add an Extra
+                    </h2>
+
+                    <p class="mt-1 text-sm text-gray-500">
+                        Choose one optional extra.
+                    </p>
+                </div>
+
+                <div
+                    class="grid gap-4 md:grid-cols-3"
+                >
+                    {#each extras as extra}
+                        <button
+                            type="button"
+                            onclick={() =>
+                                toggleExtra(
+                                    extra.id
+                                )
+                            }
+                            class={`rounded-2xl border-2 p-5 text-left transition ${
+                                selectedExtras.includes(
+                                    extra.id
+                                )
+                                    ? "border-blue-500 bg-blue-500/10"
+                                    : "border-white/10 bg-zinc-950 hover:border-blue-500/50 hover:bg-zinc-900"
+                            }`}
+                        >
+                            <div
+                                class="flex items-start justify-between"
+                            >
+                                <div
+                                    class="flex h-11 w-11 items-center justify-center rounded-xl bg-zinc-900 text-xl"
+                                >
+                                    {extra.icon}
+                                </div>
+
+                                {#if selectedExtras.includes(extra.id)}
                                     <div
-                                        class="mx-auto mt-3 flex h-6 w-6 items-center justify-center rounded-full bg-blue-600 text-xs font-bold"
+                                        class="flex h-6 w-6 items-center justify-center rounded-full bg-blue-600 text-xs font-black"
                                     >
                                         ✓
                                     </div>
-
                                 {/if}
+                            </div>
 
-                            </button>
+                            <h3
+                                class="mt-4 font-black"
+                            >
+                                {extra.name}
+                            </h3>
 
-                        {/each}
+                            <p
+                                class="mt-2 min-h-[48px] text-sm leading-6 text-gray-500"
+                            >
+                                {extra.description}
+                            </p>
 
-                    </div>
+                            <div
+                                class="mt-4 font-black text-blue-400"
+                            >
+                                {extra.price === 0
+                                    ? "Free"
+                                    : `+${formatPrice(extra.price)}`}
+                            </div>
+                        </button>
+                    {/each}
+                </div>
+            </section>
 
+            <!-- Date -->
+
+            <section>
+                <div class="mb-5">
+                    <h2 class="text-xl font-black">
+                        4. Choose a Date
+                    </h2>
+
+                    <p class="mt-1 text-sm text-gray-500">
+                        Select an available date.
+                    </p>
                 </div>
 
-                {#if selectedVehicle}
-
-                    <!-- STEP 3 — EXTRAS -->
-
-                    <div
-                        class="mt-6 rounded-2xl border border-white/10 bg-zinc-950 p-6 sm:p-8"
-                    >
-
-                        <div class="mb-8">
-
-                            <p
-                                class="text-sm font-semibold uppercase tracking-[0.25em] text-blue-400"
-                            >
-                                Step 3
-                            </p>
-
-                            <h2 class="mt-2 text-2xl font-black uppercase">
-                                Add Extras
-                            </h2>
-
-                            <p class="mt-2 text-sm text-gray-500">
-                                Optional extras for your booking.
-                            </p>
-
-                        </div>
-
-                        <div class="grid gap-4 sm:grid-cols-3">
-
-                            {#each extras as extra}
-
-                                <button
-                                    type="button"
-                                    onclick={() => toggleExtra(extra.id)}
-                                    class={`rounded-2xl border-2 p-5 text-left transition-all duration-200 ${
-                                        selectedExtras.includes(extra.id)
-                                            ? "border-blue-500 bg-blue-500/10 shadow-lg shadow-blue-500/10"
-                                            : "border-white/10 bg-black hover:border-blue-500/50 hover:bg-zinc-900"
-                                    }`}
-                                >
-
-                                    <div
-                                        class="flex items-start justify-between gap-4"
-                                    >
-
-                                        <div class="flex items-start gap-4">
-
-                                            <div
-                                                class={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl text-xl ${
-                                                    selectedExtras.includes(extra.id)
-                                                        ? "bg-blue-600/20"
-                                                        : "bg-zinc-900"
-                                                }`}
-                                            >
-                                                {extra.icon}
-                                            </div>
-
-                                            <div>
-
-                                                <h3
-                                                    class="text-lg font-black uppercase"
-                                                >
-                                                    {extra.name}
-                                                </h3>
-
-                                                <p
-                                                    class="mt-1 text-sm leading-5 text-gray-500"
-                                                >
-                                                    {extra.description}
-                                                </p>
-
-                                            </div>
-
-                                        </div>
-
-                                        <div
-                                            class={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md border text-sm font-bold ${
-                                                selectedExtras.includes(extra.id)
-                                                    ? "border-blue-500 bg-blue-600 text-white"
-                                                    : "border-white/20 text-transparent"
-                                            }`}
-                                        >
-                                            ✓
-                                        </div>
-
-                                    </div>
-
-                                    <div class="mt-5 border-t border-white/10 pt-4">
-                                        {#if extra.price > 0}
-                                            <span class="text-lg font-black text-blue-400">
-                                                +€{extra.price}
-                                            </span>
-                                        {:else}
-                                            <span class="text-lg font-black text-gray-400">
-                                                No extra charge
-                                            </span>
-                                        {/if}
-</div>
-
-                                </button>
-
-                            {/each}
-
-                        </div>
-
-                    </div>
-
-                    <!-- STEP 4 — DATE -->
+                <div
+                    class="rounded-2xl border border-white/10 bg-zinc-950 p-4 sm:p-6"
+                >
+                    <!-- Calendar header -->
 
                     <div
-                        class="mt-6 rounded-2xl border border-white/10 bg-zinc-950 p-6 sm:p-8"
+                        class="mb-6 flex items-center justify-between"
                     >
-
-                        <div class="mb-8">
-
-                            <p
-                                class="text-sm font-semibold uppercase tracking-[0.25em] text-blue-400"
-                            >
-                                Step 4
-                            </p>
-
-                            <h2 class="mt-2 text-2xl font-black uppercase">
-                                Choose A Date
-                            </h2>
-
-                            <p class="mt-2 text-sm text-gray-500">
-                                Select the day you'd like to visit BFM.
-                            </p>
-
-                        </div>
-
-                        <!-- CALENDAR -->
+                        <button
+                            type="button"
+                            onclick={previousMonth}
+                            class="flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-black text-gray-300 transition hover:border-blue-500 hover:text-white"
+                        >
+                            ←
+                        </button>
 
                         <div
-                            class="mx-auto max-w-2xl rounded-2xl border border-white/10 bg-black p-5 sm:p-7"
+                            class="text-lg font-black"
                         >
+                            {getMonthName()}
+                            {calendarYear}
+                        </div>
 
-                            <div class="flex items-center justify-between">
+                        <button
+                            type="button"
+                            onclick={nextMonth}
+                            class="flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-black text-gray-300 transition hover:border-blue-500 hover:text-white"
+                        >
+                            →
+                        </button>
+                    </div>
 
-                                <button
-                                    type="button"
-                                    onclick={previousMonth}
-                                    aria-label="Previous month"
-                                    class="flex h-11 w-11 items-center justify-center rounded-lg border border-white/10 bg-zinc-900 text-xl text-gray-300 transition hover:border-blue-500 hover:text-white"
-                                >
-                                    ‹
-                                </button>
+                    <!-- Days -->
 
-                                <h3
-                                    class="text-lg font-black uppercase tracking-wide sm:text-xl"
-                                >
-                                    {getMonthName()}
-                                </h3>
+                    <div
+                        class="mb-3 grid grid-cols-7 gap-1 text-center text-xs font-bold uppercase tracking-wider text-gray-600 sm:gap-2"
+                    >
+                        <div>Sun</div>
+                        <div>Mon</div>
+                        <div>Tue</div>
+                        <div>Wed</div>
+                        <div>Thu</div>
+                        <div>Fri</div>
+                        <div>Sat</div>
+                    </div>
 
-                                <button
-                                    type="button"
-                                    onclick={nextMonth}
-                                    aria-label="Next month"
-                                    class="flex h-11 w-11 items-center justify-center rounded-lg border border-white/10 bg-zinc-900 text-xl text-gray-300 transition hover:border-blue-500 hover:text-white"
-                                >
-                                    ›
-                                </button>
+                    <!-- Calendar -->
 
-                            </div>
-
-                            <div
-                                class="mt-7 grid grid-cols-7 gap-1 sm:gap-2"
-                            >
-
-                                {#each ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"] as day}
-
-                                    <div
-                                        class="pb-2 text-center text-[10px] font-bold tracking-wider text-gray-500 sm:text-xs"
-                                    >
-                                        {day}
-                                    </div>
-
-                                {/each}
-
-                                {#each getCalendarDays() as calendarDay}
-
-                                    {#if calendarDay.date}
-
-                                        <button
-                                            type="button"
-                                            disabled={isPastDate(calendarDay.date)}
-                                            onclick={() =>
-                                                selectDate(calendarDay.date)}
-                                            class={`aspect-square rounded-lg text-sm font-bold transition sm:text-base ${
-                                                selectedDate === calendarDay.date
-                                                    ? "bg-blue-600 text-white shadow-lg shadow-blue-500/20"
-                                                    : isToday(calendarDay.date)
+                    <div
+                        class="grid grid-cols-7 gap-1 sm:gap-2"
+                    >
+                        {#each getCalendarDays() as calendarDay}
+                            <button
+                                type="button"
+                                onclick={() =>
+                                    selectDate(
+                                        calendarDay.date
+                                    )
+                                }
+                                disabled={
+                                    !calendarDay.isCurrentMonth ||
+                                    isPastDate(
+                                        calendarDay.date
+                                    ) ||
+                                    (
+                                        selectedService !==
+                                            null &&
+                                        isDateFullyBooked(
+                                            calendarDay.date
+                                        )
+                                    )
+                                }
+                                class={`aspect-square rounded-lg text-sm font-bold transition sm:text-base ${
+                                    !calendarDay.isCurrentMonth
+                                        ? "cursor-default text-gray-800"
+                                        : selectedDate ===
+                                            calendarDay.date
+                                            ? "bg-blue-600 text-white shadow-lg shadow-blue-500/20"
+                                            : isPastDate(
+                                                calendarDay.date
+                                            )
+                                                ? "cursor-not-allowed text-gray-700"
+                                                : selectedService &&
+                                                    isDateFullyBooked(
+                                                        calendarDay.date
+                                                    )
+                                                    ? "cursor-not-allowed bg-zinc-950 text-gray-700"
+                                                    : isToday(
+                                                        calendarDay.date
+                                                    )
                                                         ? "border border-blue-500 bg-blue-500/10 text-blue-400"
-                                                        : isPastDate(calendarDay.date)
-                                                            ? "cursor-not-allowed text-gray-700"
-                                                            : "bg-zinc-900 text-gray-300 hover:bg-blue-600/20 hover:text-white"
-                                            }`}
-                                        >
-                                            {calendarDay.day}
-                                        </button>
-
-                                    {:else}
-
-                                        <div></div>
-
-                                    {/if}
-
-                                {/each}
-
-                            </div>
-
-                            <div
-                                class="mt-6 flex flex-wrap items-center justify-center gap-5 border-t border-white/10 pt-5 text-xs text-gray-500"
+                                                        : "bg-zinc-900 text-gray-300 hover:bg-blue-600/20 hover:text-white"
+                                }`}
                             >
-
-                                <div class="flex items-center gap-2">
-
-                                    <span
-                                        class="h-3 w-3 rounded-full bg-blue-600"
-                                    ></span>
-
-                                    Selected
-
-                                </div>
-
-                                <div class="flex items-center gap-2">
-
-                                    <span
-                                        class="h-3 w-3 rounded-full border border-blue-500 bg-blue-500/10"
-                                    ></span>
-
-                                    Today
-
-                                </div>
-
-                            </div>
-
-                        </div>
-
+                                {calendarDay.day}
+                            </button>
+                        {/each}
                     </div>
 
-                    {#if selectedDate}
+                    <!-- Calendar legend -->
 
-                        <!-- STEP 5 — TIME -->
+                    <div
+                        class="mt-6 flex flex-wrap gap-4 text-xs text-gray-500"
+                    >
+                        <div
+                            class="flex items-center gap-2"
+                        >
+                            <div
+                                class="h-3 w-3 rounded bg-blue-600"
+                            ></div>
+
+                            Selected
+                        </div>
 
                         <div
-                            class="mt-6 rounded-2xl border border-white/10 bg-zinc-950 p-6 sm:p-8"
+                            class="flex items-center gap-2"
                         >
+                            <div
+                                class="h-3 w-3 rounded border border-blue-500 bg-blue-500/10"
+                            ></div>
 
-                            <div class="mb-8">
+                            Today
+                        </div>
+
+                        {#if selectedService}
+                            <div
+                                class="flex items-center gap-2"
+                            >
+                                <div
+                                    class="h-3 w-3 rounded bg-zinc-950"
+                                ></div>
+
+                                Fully booked
+                            </div>
+                        {/if}
+                    </div>
+                </div>
+            </section>
+
+            <!-- Time -->
+
+            {#if selectedDate && selectedService}
+                <section>
+                    <div class="mb-5">
+                        <h2 class="text-xl font-black">
+                            5. Choose a Time
+                        </h2>
+
+                        <p class="mt-1 text-sm text-gray-500">
+                            Available times for
+                            {selectedService.name}.
+                        </p>
+                    </div>
+
+                    <div
+                        class="rounded-2xl border border-white/10 bg-zinc-950 p-5 sm:p-6"
+                    >
+                        {#if loadingAvailability}
+
+                            <div
+                                class="py-8 text-center text-sm text-gray-500"
+                            >
+                                Checking availability...
+                            </div>
+
+                        {:else if getAvailableTimeSlots().length === 0}
+
+                            <div
+                                class="rounded-xl border border-red-500/20 bg-red-500/5 px-4 py-8 text-center"
+                            >
+                                <p
+                                    class="font-bold text-red-400"
+                                >
+                                    No times available
+                                </p>
 
                                 <p
-                                    class="text-sm font-semibold uppercase tracking-[0.25em] text-blue-400"
+                                    class="mt-2 text-sm text-gray-500"
                                 >
-                                    Step 5
+                                    Please select another date.
                                 </p>
-
-                                <h2 class="mt-2 text-2xl font-black uppercase">
-                                    Choose A Time
-                                </h2>
-
-                                <p class="mt-2 text-sm text-gray-500">
-                                    Available times for {formatDate(selectedDate)}.
-                                </p>
-
                             </div>
+
+                        {:else}
 
                             <div
                                 class="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4"
                             >
+                                {#each generateTimeSlots(
+                                    selectedService.duration
+                                ) as time}
 
-                                {#each generateTimeSlots(selectedService.duration) as time}
+                                    {#if isTimeSlotAvailable(
+                                        time,
+                                        selectedService.duration
+                                    )}
 
-                                    <button
-                                        type="button"
-                                        onclick={() => (selectedTime = time)}
-                                        class={`rounded-xl border-2 px-4 py-4 text-sm font-bold transition ${
-                                            selectedTime === time
-                                                ? "border-blue-500 bg-blue-600 text-white shadow-lg shadow-blue-500/20"
-                                                : "border-white/10 bg-black text-gray-300 hover:border-blue-500/60 hover:bg-zinc-900 hover:text-white"
-                                        }`}
-                                    >
-                                        {formatTime(time)}
-                                    </button>
+                                        <button
+                                            type="button"
+                                            onclick={() =>
+                                                (selectedTime =
+                                                    time)
+                                            }
+                                            class={`rounded-xl border-2 px-4 py-4 text-sm font-bold transition ${
+                                                selectedTime ===
+                                                time
+                                                    ? "border-blue-500 bg-blue-600 text-white shadow-lg shadow-blue-500/20"
+                                                    : "border-white/10 bg-black text-gray-300 hover:border-blue-500/60 hover:bg-zinc-900 hover:text-white"
+                                            }`}
+                                        >
+                                            {formatTime(
+                                                time
+                                            )}
+                                        </button>
+
+                                    {/if}
 
                                 {/each}
-
-                            </div>
-
-                            <div
-                                class="mt-6 rounded-xl border border-white/5 bg-black px-4 py-3 text-center text-xs text-gray-500"
-                            >
-                                Opening hours:
-                                {formatTime(`${String(openingHour).padStart(2, "0")}:00`)}
-                                –
-                                {formatTime(`${String(closingHour).padStart(2, "0")}:00`)}
-                            </div>
-
-                        </div>
-
-                        {#if selectedTime}
-
-                            <!-- STEP 6 — DETAILS -->
-
-                            <div
-                                class="mt-6 rounded-2xl border border-white/10 bg-zinc-950 p-6 sm:p-8"
-                            >
-
-                                <div class="mb-8">
-
-                                    <p
-                                        class="text-sm font-semibold uppercase tracking-[0.25em] text-blue-400"
-                                    >
-                                        Step 6
-                                    </p>
-
-                                    <h2 class="mt-2 text-2xl font-black uppercase">
-                                        Your Details
-                                    </h2>
-
-                                    <p class="mt-2 text-sm text-gray-500">
-                                        Enter your details so we can confirm your booking.
-                                    </p>
-
-                                </div>
-
-                                <div class="grid gap-6 sm:grid-cols-2">
-
-                                    <!-- NAME -->
-
-                                    <div class="sm:col-span-2">
-
-                                        <label
-                                            for="booking-name"
-                                            class="mb-2 block text-sm font-semibold text-gray-300"
-                                        >
-                                            Name
-                                        </label>
-
-                                        <input
-                                            id="booking-name"
-                                            type="text"
-                                            placeholder="Your name"
-                                            class="w-full rounded-xl border border-white/10 bg-zinc-900 px-4 py-4 text-white outline-none transition placeholder:text-gray-500 hover:border-white/20 focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30"
-                                        />
-
-                                    </div>
-
-                                    <!-- PHONE -->
-
-                                    <div>
-
-                                        <label
-                                            for="booking-phone"
-                                            class="mb-2 block text-sm font-semibold text-gray-300"
-                                        >
-                                            Phone
-                                        </label>
-
-                                        <input
-                                            id="booking-phone"
-                                            type="tel"
-                                            placeholder="Your phone number"
-                                            class="w-full rounded-xl border border-white/10 bg-zinc-900 px-4 py-4 text-white outline-none transition placeholder:text-gray-500 hover:border-white/20 focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30"
-                                        />
-
-                                    </div>
-
-                                    <!-- EMAIL -->
-
-                                    <div>
-
-                                        <label
-                                            for="booking-email"
-                                            class="mb-2 block text-sm font-semibold text-gray-300"
-                                        >
-                                            Email
-                                        </label>
-
-                                        <input
-                                            id="booking-email"
-                                            type="email"
-                                            placeholder="you@example.com"
-                                            class="w-full rounded-xl border border-white/10 bg-zinc-900 px-4 py-4 text-white outline-none transition placeholder:text-gray-500 hover:border-white/20 focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30"
-                                        />
-
-                                    </div>
-
-                                </div>
-
-                                <!-- SUMMARY -->
-
-                                <div
-                                    class="mt-8 rounded-2xl border border-blue-500/20 bg-blue-500/5 p-5 sm:p-6"
-                                >
-
-                                    <p
-                                        class="text-xs font-semibold uppercase tracking-[0.2em] text-blue-400"
-                                    >
-                                        Booking Summary
-                                    </p>
-
-                                    <div class="mt-5 space-y-3">
-
-                                        <!-- SERVICE -->
-
-                                        <div
-                                            class="flex items-center justify-between text-sm"
-                                        >
-
-                                            <span class="text-gray-400">
-                                                {selectedService.name}
-                                            </span>
-
-                                            <span class="font-bold">
-                                                €{selectedService.price}
-                                            </span>
-
-                                        </div>
-
-                                        <!-- VEHICLE -->
-
-                                        <div
-                                            class="flex items-center justify-between text-sm"
-                                        >
-
-                                            <span class="text-gray-400">
-                                                Vehicle
-                                            </span>
-
-                                            <span class="font-bold">
-                                                {selectedVehicle.name}
-                                            </span>
-
-                                        </div>
-
-                                        <!-- EXTRAS -->
-
-                                        {#each getSelectedExtras() as extra}
-
-                                            {#if extra.price > 0}
-
-                                                <div
-                                                    class="flex items-center justify-between text-sm"
-                                                >
-
-                                                    <span class="text-gray-400">
-                                                        {extra.name}
-                                                    </span>
-
-                                                    <span class="font-bold">
-                                                        €{extra.price}
-                                                    </span>
-
-                                                </div>
-
-                                            {/if}
-
-                                        {/each}
-
-                                        <!-- DIVIDER -->
-
-                                        <div
-                                            class="border-t border-white/10 pt-3"
-                                        >
-
-                                            <div
-                                                class="flex items-center justify-between"
-                                            >
-
-                                                <span
-                                                    class="font-bold uppercase"
-                                                >
-                                                    Total
-                                                </span>
-
-                                                <span
-                                                    class="text-2xl font-black text-blue-400"
-                                                >
-                                                    €{getTotal()}
-                                                </span>
-
-                                            </div>
-
-                                        </div>
-
-                                    </div>
-
-                                    <!-- DATE / TIME -->
-
-                                    <div
-                                        class="mt-6 grid gap-5 border-t border-white/10 pt-5 sm:grid-cols-2"
-                                    >
-
-                                        <div>
-
-                                            <p
-                                                class="text-xs uppercase tracking-wider text-gray-500"
-                                            >
-                                                Date
-                                            </p>
-
-                                            <p class="mt-1 font-bold">
-                                                {formatDate(selectedDate)}
-                                            </p>
-
-                                        </div>
-
-                                        <div>
-
-                                            <p
-                                                class="text-xs uppercase tracking-wider text-gray-500"
-                                            >
-                                                Time
-                                            </p>
-
-                                            <p class="mt-1 font-bold">
-                                                {formatTime(selectedTime)}
-                                            </p>
-
-                                        </div>
-
-                                    </div>
-
-                                </div>
-
-                                <!-- CONFIRM -->
-
-                                <button
-                                    type="button"
-                                    class="mt-8 w-full rounded-xl bg-blue-600 px-6 py-4 text-sm font-black uppercase tracking-wide text-white transition hover:bg-blue-500 hover:shadow-lg hover:shadow-blue-500/20"
-                                >
-                                    Confirm Booking
-                                </button>
-
                             </div>
 
                         {/if}
-
-                    {/if}
-
-                {/if}
-
+                    </div>
+                </section>
             {/if}
 
+            <!-- Customer details -->
+
+            {#if selectedDate && selectedTime}
+                <section>
+                    <div class="mb-5">
+                        <h2 class="text-xl font-black">
+                            6. Your Details
+                        </h2>
+
+                        <p class="mt-1 text-sm text-gray-500">
+                            Enter your details to complete the booking.
+                        </p>
+                    </div>
+
+                    <div
+                        class="grid gap-5 rounded-2xl border border-white/10 bg-zinc-950 p-5 sm:p-6 md:grid-cols-2"
+                    >
+                        <div>
+                            <label
+                                for="customerName"
+                                class="mb-2 block text-sm font-bold text-gray-300"
+                            >
+                                Full Name
+                            </label>
+
+                            <input
+                                id="customerName"
+                                type="text"
+                                bind:value={customerName}
+                                placeholder="Your name"
+                                class="w-full rounded-xl border border-white/10 bg-black px-4 py-3 text-white outline-none transition placeholder:text-gray-700 focus:border-blue-500"
+                            />
+                        </div>
+
+                        <div>
+                            <label
+                                for="customerPhone"
+                                class="mb-2 block text-sm font-bold text-gray-300"
+                            >
+                                Phone Number
+                            </label>
+
+                            <input
+                                id="customerPhone"
+                                type="tel"
+                                bind:value={customerPhone}
+                                placeholder="085 123 4567"
+                                class="w-full rounded-xl border border-white/10 bg-black px-4 py-3 text-white outline-none transition placeholder:text-gray-700 focus:border-blue-500"
+                            />
+                        </div>
+
+                        <div class="md:col-span-2">
+                            <label
+                                for="customerEmail"
+                                class="mb-2 block text-sm font-bold text-gray-300"
+                            >
+                                Email Address
+                            </label>
+
+                            <input
+                                id="customerEmail"
+                                type="email"
+                                bind:value={customerEmail}
+                                placeholder="you@example.com"
+                                class="w-full rounded-xl border border-white/10 bg-black px-4 py-3 text-white outline-none transition placeholder:text-gray-700 focus:border-blue-500"
+                            />
+                        </div>
+                    </div>
+                </section>
+            {/if}
+
+            <!-- Summary -->
+
+            {#if selectedService}
+                <section>
+                    <div class="mb-5">
+                        <h2 class="text-xl font-black">
+                            7. Booking Summary
+                        </h2>
+                    </div>
+
+                    <div
+                        class="rounded-2xl border border-white/10 bg-zinc-950 p-5 sm:p-6"
+                    >
+                        <div
+                            class="grid gap-5 sm:grid-cols-2"
+                        >
+                            <div>
+                                <p
+                                    class="text-xs font-bold uppercase tracking-wider text-gray-600"
+                                >
+                                    Service
+                                </p>
+
+                                <p
+                                    class="mt-1 font-bold"
+                                >
+                                    {selectedService.name}
+                                </p>
+                            </div>
+
+                            <div>
+                                <p
+                                    class="text-xs font-bold uppercase tracking-wider text-gray-600"
+                                >
+                                    Vehicle
+                                </p>
+
+                                <p
+                                    class="mt-1 font-bold"
+                                >
+                                    {selectedVehicle?.name ??
+                                        "Not selected"}
+                                </p>
+                            </div>
+
+                            <div>
+                                <p
+                                    class="text-xs font-bold uppercase tracking-wider text-gray-600"
+                                >
+                                    Extra
+                                </p>
+
+                                <p
+                                    class="mt-1 font-bold"
+                                >
+                                    {getSelectedExtra().name}
+                                </p>
+                            </div>
+
+                            <div>
+                                <p
+                                    class="text-xs font-bold uppercase tracking-wider text-gray-600"
+                                >
+                                    Date
+                                </p>
+
+                                <p
+                                    class="mt-1 font-bold"
+                                >
+                                    {selectedDate ||
+                                        "Not selected"}
+                                </p>
+                            </div>
+
+                            <div>
+                                <p
+                                    class="text-xs font-bold uppercase tracking-wider text-gray-600"
+                                >
+                                    Time
+                                </p>
+
+                                <p
+                                    class="mt-1 font-bold"
+                                >
+                                    {selectedTime
+                                        ? formatTime(
+                                            selectedTime
+                                        )
+                                        : "Not selected"}
+                                </p>
+                            </div>
+
+                            <div>
+                                <p
+                                    class="text-xs font-bold uppercase tracking-wider text-gray-600"
+                                >
+                                    Duration
+                                </p>
+
+                                <p
+                                    class="mt-1 font-bold"
+                                >
+                                    {selectedService.duration ===
+                                    120
+                                        ? "1–2 hours"
+                                        : `${selectedService.duration} minutes`}
+                                </p>
+                            </div>
+                        </div>
+
+                        <div
+                            class="mt-6 flex items-center justify-between border-t border-white/10 pt-6"
+                        >
+                            <span
+                                class="text-lg font-black"
+                            >
+                                Total
+                            </span>
+
+                            <span
+                                class="text-2xl font-black text-blue-400"
+                            >
+                                €{getTotalPrice()}
+                            </span>
+                        </div>
+                    </div>
+                </section>
+            {/if}
+
+            <!-- Message -->
+
+            {#if bookingMessage}
+                <div
+                    class={`rounded-xl border px-4 py-4 text-sm font-medium ${
+                        bookingSuccess
+                            ? "border-green-500/20 bg-green-500/5 text-green-400"
+                            : "border-red-500/20 bg-red-500/5 text-red-400"
+                    }`}
+                >
+                    {bookingMessage}
+                </div>
+            {/if}
+
+            <!-- Submit -->
+
+            {#if selectedService}
+                <div class="pb-10">
+                    <button
+                        type="button"
+                        onclick={submitBooking}
+                        disabled={
+                            isSubmitting ||
+                            !selectedVehicle ||
+                            !selectedDate ||
+                            !selectedTime ||
+                            !customerName.trim() ||
+                            !customerPhone.trim() ||
+                            !customerEmail.trim()
+                        }
+                        class="w-full rounded-xl bg-blue-600 px-6 py-4 text-base font-black text-white shadow-lg shadow-blue-500/20 transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none"
+                    >
+                        {#if isSubmitting}
+                            Processing Booking...
+                        {:else if bookingSuccess}
+                            Booking Confirmed ✓
+                        {:else}
+                            Confirm Booking — €
+                            {getTotalPrice()}
+                        {/if}
+                    </button>
+
+                    <p
+                        class="mt-3 text-center text-xs text-gray-600"
+                    >
+                        By confirming your booking, you agree
+                        to the appointment details shown above.
+                    </p>
+                </div>
+            {/if}
         </div>
-
-    </section>
-
-</main>
+    </div>
+</div>
