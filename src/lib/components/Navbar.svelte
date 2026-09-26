@@ -32,13 +32,6 @@
 
 
             <a
-                href="/about"
-                class="text-sm font-medium text-white transition hover:text-blue-400"
-            >
-                ABOUT US
-            </a>
-
-            <a
                 href="/gallery"
                 class="text-sm font-medium text-white transition hover:text-blue-400"
             >
